@@ -109,6 +109,10 @@ class EMLP:
             self.y_valid=y_valid
             self.config=config
             self.times=0
+            self.x_train_gpu=torch.from_numpy(x_train).float().to('cuda')
+            self.y_train_gpu=torch.from_numpy(y_train).float().to('cuda')
+            self.x_valid_gpu=torch.from_numpy(x_valid).float().to('cuda')
+            self.y_valid_gpu=torch.from_numpy(y_valid).float().to('cuda')
             
             activate_function_list=[]
             if len(config['ActivateFunction'])==1 or not isinstance(config['ActivateFunction'],list):
@@ -129,7 +133,7 @@ class EMLP:
             nn_data_dict['TopologyInInt']=params_int
             nn_data_dict['ActivateFunction']=self.activate_function_list
             
-            model,y_valid_pred,y_train_pred,current_error=EMLP.train_nn(params_int,self.x_train,self.x_valid,self.y_train,self.y_valid,self.config,self.x_train.shape[1],self.activate_function_list)
+            model,y_valid_pred,y_train_pred,current_error=EMLP.train_nn(params_int,  self.x_train_gpu,self.x_valid_gpu,self.y_train_gpu,self.y_valid_gpu,  self.config,self.x_train.shape[1],self.activate_function_list)
             model=model.cpu()
 
             bias=self.config['PercentageErrorBias']
@@ -161,13 +165,10 @@ class EMLP:
             self.times+=1
             print(f"\n总评估次数:{total_evaluate_times}     当前进度:{100*self.times/total_evaluate_times:.4f}%     第{1+math.floor((self.times-1)/self.config['PopSize'])}轮、第{1+((self.times-1) % self.config['PopSize'])}次评估     Mse误差为:{current_error:.6e}     EmlpError误差为:{f[1]:.6e}\n")
             out["F"] =f
-    def train_nn(params,x_train,x_valid,y_train,y_valid,config,n_vars,activate_function_list):
+    def train_nn(params  ,x_train,x_valid,y_train,y_valid,  config,n_vars,activate_function_list):
         params=np.array(params)
         params=params[params!=0]
-        x_train=torch.from_numpy(x_train).float().to('cuda')
-        y_train=torch.from_numpy(y_train).float().to('cuda')
-        x_valid=torch.from_numpy(x_valid).float().to('cuda')
-        y_valid=torch.from_numpy(y_valid).float().to('cuda')
+        
         max_iter=config['Epochs']
         model=EMLP.Net(n_vars,params,1,activate_function_list).to('cuda')
         criterion=nn.MSELoss()
