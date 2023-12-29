@@ -34,7 +34,7 @@ class EMLPHandler:
         x_max=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['XMax']
         y_min=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['YMin']
         y_max=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['YMax']
-        activate_function=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['ActivateFunction']
+        activate_function=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['ActivateFunction'] if 'ActivateFunction' in self.ParetoSetNeuralNetwork[tuple(key_of_model)] else 0
         State_Dict=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['ModelDictionary']
         key_of_model=np.array(key_of_model)
         key_of_model=key_of_model[key_of_model!=0]
@@ -57,108 +57,23 @@ class EMLP:
         return result
     # 核心功能，序列化保存网络
     class Net(nn.Module):
-        def __init__(self,n_in,params,n_out,activate_func) :
-            self.params=params
-            self.activate_func=activate_func
+        def __init__(self,n_in,params,n_out,activate_function_list) :
             super().__init__()
-            if params.size==1:
-                self.layer1=nn.Linear(n_in,params[0])
-                self.layer2=nn.Linear(params[0],n_out)
-            elif params.size==2:
-                self.layer1=nn.Linear(n_in,params[0])
-                self.layer2=nn.Linear(params[0],params[1])
-                self.layer3=nn.Linear(params[1],n_out)
-            elif params.size==3:
-                self.layer1=nn.Linear(n_in,params[0])
-                self.layer2=nn.Linear(params[0],params[1])
-                self.layer3=nn.Linear(params[1],params[2])
-                self.layer4=nn.Linear(params[2],n_out)
-            elif params.size==4:
-                self.layer1=nn.Linear(n_in,params[0])
-                self.layer2=nn.Linear(params[0],params[1])
-                self.layer3=nn.Linear(params[1],params[2])
-                self.layer4=nn.Linear(params[2],params[3])
-                self.layer5=nn.Linear(params[3],n_out)
-            elif params.size==5:
-                self.layer1=nn.Linear(n_in,params[0])
-                self.layer2=nn.Linear(params[0],params[1])
-                self.layer3=nn.Linear(params[1],params[2])
-                self.layer4=nn.Linear(params[2],params[3])
-                self.layer5=nn.Linear(params[3],params[4])
-                self.layer6=nn.Linear(params[4],n_out)
-            elif params.size==6:
-                self.layer1=nn.Linear(n_in,params[0])
-                self.layer2=nn.Linear(params[0],params[1])
-                self.layer3=nn.Linear(params[1],params[2])
-                self.layer4=nn.Linear(params[2],params[3])
-                self.layer5=nn.Linear(params[3],params[4])
-                self.layer6=nn.Linear(params[4],params[5])
-                self.layer7=nn.Linear(params[5],n_out)
-        def activate_function(self,x):
-            if self.activate_func==0:
-                x=torch.sigmoid(x)
-            elif self.activate_func==1:
-                x=torch.tanh(x)
-            elif self.activate_func==2:
-                x=torch.relu(x)
-            elif self.activate_func==3:
-                return x
-            return x
+            self.params=params
+            self.activate_function_list=activate_function_list
+            self.layers=nn.ModuleList()
+            for i in range(params.size):
+                if i==0:
+                    self.layers.append(nn.Linear(n_in,params[i]))
+                else:
+                    self.layers.append(nn.Linear(params[i-1],params[i]))
+            self.layers.append(nn.Linear(params[params.size-1],n_out))
+            
         def forward(self,x):
-            if self.params.size==1:
-                x=self.layer1(x)
-                x=self.activate_function(x)
-                x=self.layer2(x)
-            elif self.params.size==2:
-                x=self.layer1(x)
-                x=self.activate_function(x)
-                x=self.layer2(x)
-                x=self.activate_function(x)
-                x=self.layer3(x)
-            elif self.params.size==3:
-                x=self.layer1(x)
-                x=self.activate_function(x)
-                x=self.layer2(x)
-                x=self.activate_function(x)
-                x=self.layer3(x)
-                x=self.activate_function(x)
-                x=self.layer4(x)
-            elif self.params.size==4:
-                x=self.layer1(x)
-                x=self.activate_function(x)
-                x=self.layer2(x)
-                x=self.activate_function(x)
-                x=self.layer3(x)
-                x=self.activate_function(x)
-                x=self.layer4(x)
-                x=self.activate_function(x)
-                x=self.layer5(x)
-            elif self.params.size==5:
-                x=self.layer1(x)
-                x=self.activate_function(x)
-                x=self.layer2(x)
-                x=self.activate_function(x)
-                x=self.layer3(x)
-                x=self.activate_function(x)
-                x=self.layer4(x)
-                x=self.activate_function(x)
-                x=self.layer5(x)
-                x=self.activate_function(x)
-                x=self.layer6(x)
-            elif self.params.size==6:
-                x=self.layer1(x)
-                x=self.activate_function(x)
-                x=self.layer2(x)
-                x=self.activate_function(x)
-                x=self.layer3(x)
-                x=self.activate_function(x)
-                x=self.layer4(x)
-                x=self.activate_function(x)
-                x=self.layer5(x)
-                x=self.activate_function(x)
-                x=self.layer6(x)
-                x=self.activate_function(x)
-                x=self.layer7(x)
+            for i in range(len(self.layers)):
+                x=self.layers[i](x)
+                if i!=len(self.layers)-1:
+                    x=self.activate_function_list[i](x)
             return x
     class ValidationCheck():
         def __init__(self,max_count) -> None:
@@ -174,6 +89,15 @@ class EMLP:
             self.error=this_error
             return self.counter>=self.max_count
     class opt_problem(Problem):
+        def add_activate_func(activate_func):
+            if activate_func == 'Sigmoid':
+                return torch.sigmoid
+            elif activate_func == 'Tanh':
+                return torch.tanh
+            elif activate_func == 'Relu':
+                return torch.relu
+            else:
+                raise RuntimeError("invalid activate function")
         def __init__(self,config,x_train,x_valid,y_train,y_valid,nn_buffer, **kwargs):
             lb=np.array(config["LowerBound"],dtype=np.int32)
             ub=np.array(config["UpperBound"],dtype=np.int32)
@@ -185,16 +109,17 @@ class EMLP:
             self.y_valid=y_valid
             self.config=config
             self.times=0
-            if config['ActivateFunction'] == 'Sigmoid':
-                self.activate_func=0
-            elif config['ActivateFunction'] == 'Tanh':
-                self.activate_func=1
-            elif config['ActivateFunction'] == 'Relu':
-                self.activate_func=2
-            elif config['ActivateFunction'] == 'Linear':
-                self.activate_func=3
+            
+            activate_function_list=[]
+            if len(config['ActivateFunction'])==1 or not isinstance(config['ActivateFunction'],list):
+                for i in range(ub.size):
+                    func_ptr=EMLP.opt_problem.add_activate_func(config['ActivateFunction'][0] if isinstance(config['ActivateFunction'],list) else config['ActivateFunction'])
+                    activate_function_list.append(func_ptr)
             else:
-                raise RuntimeError("invalid activate function")
+                for i in range(ub.size):
+                    func_ptr=EMLP.opt_problem.add_activate_func(config['ActivateFunction'][i])
+                    activate_function_list.append(func_ptr)
+            self.activate_function_list=activate_function_list
         def _evaluate(self, x, out, *args, **kwargs):
             # 创建一个字典来保存这个网络的数据
             params_float=x.tolist()
@@ -202,9 +127,9 @@ class EMLP:
             nn_data_dict={}
             nn_data_dict['TopologyInFloat']=params_float
             nn_data_dict['TopologyInInt']=params_int
-            nn_data_dict['ActivateFunction']=self.activate_func
+            nn_data_dict['ActivateFunction']=self.activate_function_list
             
-            model,y_valid_pred,y_train_pred,current_error=EMLP.train_nn(params_int,self.x_train,self.x_valid,self.y_train,self.y_valid,self.config,self.x_train.shape[1],self.activate_func)
+            model,y_valid_pred,y_train_pred,current_error=EMLP.train_nn(params_int,self.x_train,self.x_valid,self.y_train,self.y_valid,self.config,self.x_train.shape[1],self.activate_function_list)
             model=model.cpu()
 
             bias=self.config['PercentageErrorBias']
@@ -236,7 +161,7 @@ class EMLP:
             self.times+=1
             print(f"\n总评估次数:{total_evaluate_times}     当前进度:{100*self.times/total_evaluate_times:.4f}%     第{1+math.floor((self.times-1)/self.config['PopSize'])}轮、第{1+((self.times-1) % self.config['PopSize'])}次评估     Mse误差为:{current_error:.6e}     EmlpError误差为:{f[1]:.6e}\n")
             out["F"] =f
-    def train_nn(params,x_train,x_valid,y_train,y_valid,config,n_vars,activate_func):
+    def train_nn(params,x_train,x_valid,y_train,y_valid,config,n_vars,activate_function_list):
         params=np.array(params)
         params=params[params!=0]
         x_train=torch.from_numpy(x_train).float().to('cuda')
@@ -244,7 +169,7 @@ class EMLP:
         x_valid=torch.from_numpy(x_valid).float().to('cuda')
         y_valid=torch.from_numpy(y_valid).float().to('cuda')
         max_iter=config['Epochs']
-        model=EMLP.Net(n_vars,params,1,activate_func).to('cuda')
+        model=EMLP.Net(n_vars,params,1,activate_function_list).to('cuda')
         criterion=nn.MSELoss()
         opt=torch.optim.Adam(model.parameters(),lr=config['MaxLearningRate'])
         lr_scheduler_stepsize=round(config['Epochs']*0.01)
