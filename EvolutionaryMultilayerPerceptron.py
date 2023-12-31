@@ -109,7 +109,7 @@ class EMLP:
                 return torch.relu
             else:
                 raise RuntimeError("invalid activate function")
-        def __init__(self,config,x_train,x_valid,y_train,y_valid,nn_buffer, **kwargs):
+        def __init__(self,config,x_train,x_valid,y_train,y_valid,nn_buffer,penalty_coe, **kwargs):
             lb=np.array(config["LowerBound"],dtype=np.int32)
             ub=np.array(config["UpperBound"],dtype=np.int32)
             super().__init__(n_var=ub.size, n_obj=2, xl=lb, xu=ub, vtype=int,elementwise=True, **kwargs)
@@ -120,6 +120,7 @@ class EMLP:
             self.y_valid=y_valid
             self.config=config
             self.times=0
+            self.penalty_coe=penalty_coe
             self.x_train_gpu=torch.from_numpy(x_train).float().to('cuda')
             self.y_train_gpu=torch.from_numpy(y_train).float().to('cuda')
             self.x_valid_gpu=torch.from_numpy(x_valid).float().to('cuda')
@@ -150,7 +151,7 @@ class EMLP:
             bias=self.config['PercentageErrorBias']
             Etst=np.mean(np.abs((y_valid_pred-self.y_valid)/(self.y_valid+bias)))
             Etrn=np.mean(np.abs((y_train_pred-self.y_train)/(self.y_train+bias)))
-            f=np.array([sum(params_int),(Etst+Etrn)*(1+0.33*Etst[Etst>0.15 and Etst<0.25].size+Etst[Etst>0.25].size)])
+            f=np.array([sum(params_int),(Etst+Etrn)*(1+self.penalty_coe[0]*Etst[Etst>0.15 and Etst<0.25].size+self.penalty_coe[1]*Etst[Etst>0.25].size)])
             percentage_trn=(y_train_pred-self.y_train)/self.y_train
             percentage_tst=(y_valid_pred-self.y_valid)/self.y_valid
             nn_data_dict['EmlpError']=f[1]
@@ -253,8 +254,12 @@ class EMLP:
         x_valid=x[valid_index]
         y_valid=y[valid_index]
         
+        if 'PenaltyCoefficient' in dict:
+            penalty_coe=dict['PenaltyCoefficient']
+        else:
+            penalty_coe=[0.33,1]
         # 创建问题
-        self.Problem=self.opt_problem(dict,x_train,x_valid,y_train,y_valid,self.ParetoSetNeuralNetwork)
+        self.Problem=self.opt_problem(dict,x_train,x_valid,y_train,y_valid,self.ParetoSetNeuralNetwork,penalty_coe)
         self.MaxIteration=dict['MaxIteration']
         self.algorithm = NSGA2(pop_size=dict['PopSize'])
     def Train(self):
