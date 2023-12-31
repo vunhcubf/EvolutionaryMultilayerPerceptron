@@ -26,22 +26,33 @@ class EMLPHandler:
         plt.title('Pareto Set')
         plt.show()
     def PrintModel(self):
+        info=[]
+        index=[]
         for key,value in self.ParetoSetNeuralNetwork.items():
-            print(f"模型网络结构为:{value['TopologyInInt']},\t训练误差为{value['EmlpError']}\t总神经元数:{sum(value['TopologyInInt'])}")
+            index.append(sum(value['TopologyInInt']))
+            info_sub=f"模型网络结构为:{value['TopologyInInt']},\tEmlp误差为{value['EmlpError']}\t总神经元数:{sum(value['TopologyInInt'])}"
+            if 'TotalPercentageRmseError' in self.ParetoSetNeuralNetwork:
+                info_sub+=f"\t总数据集百分比Rmse误差:{value['TotalPercentageRmseError']}"
+            if 'TotalRmseError' in self.ParetoSetNeuralNetwork:
+                info_sub+=f"\t总数据集Rmse误差:{value['TotalRmseError']}"
+            info.append(info_sub)
+        sorted_list = sorted(enumerate(index), key=lambda x: x[1])
+        for index,value in sorted_list:
+            print(info[index])
     def PredictModel(self,key_of_model,x):
+        key_of_model_remove0=np.array(key_of_model)
+        key_of_model_remove0=key_of_model_remove0[key_of_model_remove0!=0]
         n_var=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['Dimension']
         x_min=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['XMin']
         x_max=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['XMax']
         y_min=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['YMin']
         y_max=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['YMax']
-        activate_function=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['ActivateFunction'] if 'ActivateFunction' in self.ParetoSetNeuralNetwork[tuple(key_of_model)] else 0
+        activate_function=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['ActivateFunction'] if 'ActivateFunction' in self.ParetoSetNeuralNetwork[tuple(key_of_model)] else [torch.sigmoid for _ in range(key_of_model_remove0.size)]
         State_Dict=self.ParetoSetNeuralNetwork[tuple(key_of_model)]['ModelDictionary']
-        key_of_model=np.array(key_of_model)
-        key_of_model=key_of_model[key_of_model!=0]
         x=(x-x_min)/(x_max-x_min)
         x=x.astype(np.float32)
         x=torch.from_numpy(x)
-        model=EMLP.Net(n_var,key_of_model,1,activate_function)
+        model=EMLP.Net(n_var,key_of_model_remove0,1,activate_function)
         model.load_state_dict(State_Dict)
         y=model(x).data.numpy()
         y=y_min+y*(y_max-y_min)
@@ -140,7 +151,11 @@ class EMLP:
             Etst=np.mean(np.abs((y_valid_pred-self.y_valid)/(self.y_valid+bias)))
             Etrn=np.mean(np.abs((y_train_pred-self.y_train)/(self.y_train+bias)))
             f=np.array([sum(params_int),(Etst+Etrn)*(1+0.33*Etst[Etst>0.15 and Etst<0.25].size+Etst[Etst>0.25].size)])
+            percentage_trn=(y_train_pred-self.y_train)/self.y_train
+            percentage_tst=(y_valid_pred-self.y_valid)/self.y_valid
             nn_data_dict['EmlpError']=f[1]
+            nn_data_dict['TotalPercentageRmseError']=math.sqrt(np.sum(percentage_tst*percentage_tst) + np.sum(percentage_trn*percentage_trn))
+            nn_data_dict['TotalRmseError']=math.sqrt(np.sum((y_train_pred-self.y_train)*(y_train_pred-self.y_train)) + np.sum((y_valid_pred-self.y_valid)*(y_valid_pred-self.y_valid)))
             nn_data_dict['ModelDictionary']=model.state_dict()
             nn_data_dict['Dimension']=self.x_train.shape[1]
             # 评估帕累托最优解集
