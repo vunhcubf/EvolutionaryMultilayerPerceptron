@@ -152,8 +152,8 @@ class EMLP:
             Etst=np.mean(np.abs((y_valid_pred-self.y_valid)/(self.y_valid+bias)))
             Etrn=np.mean(np.abs((y_train_pred-self.y_train)/(self.y_train+bias)))
             f=np.array([sum(params_int),(Etst+Etrn)*(1+self.penalty_coe[0]*Etst[Etst>0.15 and Etst<0.25].size+self.penalty_coe[1]*Etst[Etst>0.25].size)])
-            percentage_trn=(y_train_pred-self.y_train)/self.y_train
-            percentage_tst=(y_valid_pred-self.y_valid)/self.y_valid
+            percentage_trn=(y_train_pred-self.y_train)/(self.y_train+1e-8)
+            percentage_tst=(y_valid_pred-self.y_valid)/(self.y_valid+1e-8)
             nn_data_dict['EmlpError']=f[1]
             nn_data_dict['TotalPercentageRmseError']=math.sqrt(np.sum(percentage_tst*percentage_tst) + np.sum(percentage_trn*percentage_trn))
             nn_data_dict['TotalRmseError']=math.sqrt(np.sum((y_train_pred-self.y_train)*(y_train_pred-self.y_train)) + np.sum((y_valid_pred-self.y_valid)*(y_valid_pred-self.y_valid)))
