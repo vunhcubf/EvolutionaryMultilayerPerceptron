@@ -159,7 +159,7 @@ class EMLP:
 
             y_pred_total=self.y_min+y_pred_total*(self.y_max-self.y_min)
             y_train_total=self.y_min+y_train_total*(self.y_max-self.y_min)
-            
+
             nn_data_dict['EmlpError']=f[1]
             nn_data_dict['TotalPercentageRmseError']=math.sqrt(np.mean( ((y_train_total-y_pred_total)/(y_train_total+1e-7))**2 ))
             nn_data_dict['TotalRmseError']=math.sqrt(np.mean( (y_train_total-y_pred_total)**2 ))
@@ -265,7 +265,7 @@ class EMLP:
         else:
             penalty_coe=[0.33,1]
         # 创建问题
-        self.Problem=self.opt_problem(dict,x_train,x_valid,y_train,y_valid,self.ParetoSetNeuralNetwork,penalty_coe)
+        self.Problem=self.opt_problem(dict,x_train,x_valid,y_train,y_valid,self.ParetoSetNeuralNetwork,penalty_coe,y_min,y_max)
         self.MaxIteration=dict['MaxIteration']
         self.algorithm = NSGA2(pop_size=dict['PopSize'])
     def Train(self):
