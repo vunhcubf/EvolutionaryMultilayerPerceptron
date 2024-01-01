@@ -31,9 +31,9 @@ class EMLPHandler:
         for key,value in self.ParetoSetNeuralNetwork.items():
             index.append(sum(value['TopologyInInt']))
             info_sub=f"模型网络结构为:{value['TopologyInInt']},\tEmlp误差为{value['EmlpError']}\t总神经元数:{sum(value['TopologyInInt'])}"
-            if 'TotalPercentageRmseError' in self.ParetoSetNeuralNetwork:
+            if 'TotalPercentageRmseError' in value:
                 info_sub+=f"\t总数据集百分比Rmse误差:{value['TotalPercentageRmseError']}"
-            if 'TotalRmseError' in self.ParetoSetNeuralNetwork:
+            if 'TotalRmseError' in value:
                 info_sub+=f"\t总数据集Rmse误差:{value['TotalRmseError']}"
             info.append(info_sub)
         sorted_list = sorted(enumerate(index), key=lambda x: x[1])
@@ -109,7 +109,7 @@ class EMLP:
                 return torch.relu
             else:
                 raise RuntimeError("invalid activate function")
-        def __init__(self,config,x_train,x_valid,y_train,y_valid,nn_buffer,penalty_coe, **kwargs):
+        def __init__(self,config,x_train,x_valid,y_train,y_valid,nn_buffer,penalty_coe,y_min,y_max, **kwargs):
             lb=np.array(config["LowerBound"],dtype=np.int32)
             ub=np.array(config["UpperBound"],dtype=np.int32)
             super().__init__(n_var=ub.size, n_obj=2, xl=lb, xu=ub, vtype=int,elementwise=True, **kwargs)
@@ -125,7 +125,8 @@ class EMLP:
             self.y_train_gpu=torch.from_numpy(y_train).float().to('cuda')
             self.x_valid_gpu=torch.from_numpy(x_valid).float().to('cuda')
             self.y_valid_gpu=torch.from_numpy(y_valid).float().to('cuda')
-            
+            self.y_min=y_min
+            self.y_max=y_max
             activate_function_list=[]
             if len(config['ActivateFunction'])==1 or not isinstance(config['ActivateFunction'],list):
                 for i in range(ub.size):
@@ -155,6 +156,10 @@ class EMLP:
 
             y_pred_total=np.vstack((y_train_pred,y_valid_pred))
             y_train_total=np.vstack((self.y_train,self.y_valid))
+
+            y_pred_total=self.y_min+y_pred_total*(self.y_max-self.y_min)
+            y_train_total=self.y_min+y_train_total*(self.y_max-self.y_min)
+            
             nn_data_dict['EmlpError']=f[1]
             nn_data_dict['TotalPercentageRmseError']=math.sqrt(np.mean( ((y_train_total-y_pred_total)/(y_train_total+1e-7))**2 ))
             nn_data_dict['TotalRmseError']=math.sqrt(np.mean( (y_train_total-y_pred_total)**2 ))
