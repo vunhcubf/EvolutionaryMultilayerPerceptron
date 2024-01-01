@@ -185,7 +185,7 @@ class EMLP:
                         del self.nn_buffer[key]
             total_evaluate_times=self.config['PopSize']*self.config['MaxIteration']
             self.times+=1
-            print(f"\n总评估次数:{total_evaluate_times}     当前进度:{100*self.times/total_evaluate_times:.4f}%     第{1+math.floor((self.times-1)/self.config['PopSize'])}轮、第{1+((self.times-1) % self.config['PopSize'])}次评估     Mse误差为:{current_error:.6e}     EmlpError误差为:{f[1]:.6e}\n")
+            print(f"\n总评估次数:{total_evaluate_times}     当前进度:{100*self.times/total_evaluate_times:.4f}%     第{1+math.floor((self.times-1)/self.config['PopSize'])}轮、第{1+((self.times-1) % self.config['PopSize'])}次评估     总Rmse误差:{nn_data_dict['TotalRmseError']:.6e}     EmlpError误差为:{f[1]:.6e}\n")
             out["F"] =f
     def train_nn(params  ,x_train,x_valid,y_train,y_valid,  config,n_vars,activate_function_list):
         params=np.array(params)
