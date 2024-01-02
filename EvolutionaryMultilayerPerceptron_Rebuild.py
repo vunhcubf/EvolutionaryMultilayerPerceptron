@@ -10,6 +10,7 @@ import torch
 from matplotlib import pyplot as plt
 import math
 import sys
+import copy
 
 class Utils:
     @staticmethod
@@ -46,7 +47,7 @@ class EmlpResultHandler:
         x=(x-ModelData['XMin'])/(ModelData['XMax']-ModelData['XMin'])
         x=x.astype(np.float32)
         x=torch.from_numpy(x)
-        model=EMLP.Net(ModelData['Dimension'],key_of_model,1,activate_function)
+        model=EmlpNet(ModelData['Dimension'],key_of_model,1,activate_function)
         model.load_state_dict(ModelData['ModelDictionary'])
         y=model(x).data.numpy()
         y=ModelData['YMin']+y*(ModelData['YMax']-ModelData['YMin'])
@@ -101,9 +102,9 @@ class EmlpTrainer:
     def __init__(self,ConfigDict) -> None:
         # 保存训练的网络
         self.ParetoSetNeuralNetwork={}
-        self.ConfigDict=ConfigDict
+        self.ConfigDict=copy.deepcopy(ConfigDict)
         # 配置求解器相关的参数
-        self.ConfigDict['NumberOfVars']=self.ConfigDict["LowerBound"].size
+        self.ConfigDict['NumberOfVars']=len(self.ConfigDict["LowerBound"])
         self.ConfigDict['LowerBound']=np.array(self.ConfigDict['LowerBound'],dtype=np.int32)
         self.ConfigDict['UpperBound']=np.array(self.ConfigDict['UpperBound'],dtype=np.int32)
         self.ConfigDict['Dimension']=self.ConfigDict['X'].shape[1]
@@ -142,7 +143,20 @@ class EmlpTrainer:
         self.Problem=EmlpProblem(self.ConfigDict,self.ParetoSetNeuralNetwork)
         self.Algorithm=NSGA2(pop_size=self.ConfigDict['PopSize'])
     def Train(self):
-        minimize(self.Problem,self.algorithm,('n_gen', self.MaxIteration),verbose=False)
+        minimize(self.Problem,self.Algorithm,('n_gen', self.ConfigDict['MaxIteration']),verbose=False)
+    def GetTrainResult(self):
+        return self.ParetoSetNeuralNetwork
+    def DrawParetoSet(self):
+        complexity=[]
+        accuracy=[]
+        for key,value in self.ParetoSetNeuralNetwork.items():
+            complexity.append(sum(value['TopologyInInt']))
+            accuracy.append(value['EmlpError'])
+        plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
+        plt.xlabel('Complexity')
+        plt.ylabel('EmlpError')
+        plt.title('Pareto Set')
+        plt.show()
 ##################################################################
 ##################################################################
     # Nsga2求解器的问题类
@@ -166,7 +180,7 @@ class EmlpProblem(Problem):
     def TrainNeuralNetwork(self,ModelData,XTrainGpu,XValidGpu,YTrainGpu,YValidGpu):
         ModelTopology=Utils.RemoveZeros(ModelData['TopologyInInt'])
         # 创建需要训练的模型
-        Model=EmlpNet(self.ConfigDict['Dimension'],ModelTopology,1,self.ConfigDict['ActivateFunction'])
+        Model=EmlpNet(self.ConfigDict['Dimension'],ModelTopology,1,self.ConfigDict['ActivateFunction']).to('cuda')
         # 创建评价标准
         Criterion=nn.MSELoss()
         # 创建Adam优化器
@@ -274,16 +288,4 @@ class EmlpProblem(Problem):
         TotalEvaluateTimes=self.ConfigDict['PopSize']*self.ConfigDict['MaxIteration']
         self.CurrentEvaluateTimes+=1
         print(f"\n总评估次数:{TotalEvaluateTimes}     当前进度:{100*self.CurrentEvaluateTimes/TotalEvaluateTimes:.4f}%     第{1+math.floor((self.CurrentEvaluateTimes-1)/self.ConfigDict['PopSize'])}轮、第{1+((self.CurrentEvaluateTimes-1) % self.ConfigDict['PopSize'])}次评估     总Rmse误差:{ModelData['TotalRmseError']:.6e}     EmlpError误差为:{EmlpError:.6e}\n")
-    def GetTrainResult(self):
-        return self.ParetoSetNeuralNetwork
-    def DrawParetoSet(self):
-        complexity=[]
-        accuracy=[]
-        for key,value in self.ParetoSetNeuralNetwork.items():
-            complexity.append(sum(value['TopologyInInt']))
-            accuracy.append(value['EmlpError'])
-        plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
-        plt.xlabel('Complexity')
-        plt.ylabel('EmlpError')
-        plt.title('Pareto Set')
-        plt.show()
+    
