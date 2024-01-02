@@ -20,9 +20,9 @@ class EMLPHandler:
         for key,value in self.ParetoSetNeuralNetwork.items():
             complexity.append(sum(value['TopologyInInt']))
             accuracy.append(value['EmlpError'])
-        plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
-        plt.xlabel('Complexity')
-        plt.ylabel('EmlpError')
+        plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='red')
+        plt.xlabel('Total Count of neurons')
+        plt.ylabel('Emlp Error')
         plt.title('Pareto Set')
         plt.show()
     def PrintModel(self):
