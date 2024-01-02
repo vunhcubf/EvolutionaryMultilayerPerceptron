@@ -52,6 +52,17 @@ class EmlpResultHandler:
         y=model(x).data.numpy()
         y=ModelData['YMin']+y*(ModelData['YMax']-ModelData['YMin'])
         return y
+    def DrawParetoSet(self):
+        complexity=[]
+        accuracy=[]
+        for key,value in self.ResultDictionary.items():
+            complexity.append(sum(value['TopologyInInt']))
+            accuracy.append(value['EmlpError'])
+        plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
+        plt.xlabel('Complexity')
+        plt.ylabel('EmlpError')
+        plt.title('Pareto Set')
+        plt.show()
 ##################################################################
 ##################################################################
 class EmlpNet(nn.Module):
