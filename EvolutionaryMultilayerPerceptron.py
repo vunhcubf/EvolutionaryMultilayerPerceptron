@@ -150,9 +150,11 @@ class EMLP:
             model=model.cpu()
 
             bias=self.config['PercentageErrorBias']
-            Etst=np.mean(np.abs((y_valid_pred-self.y_valid)/(self.y_valid+bias)))
-            Etrn=np.mean(np.abs((y_train_pred-self.y_train)/(self.y_train+bias)))
-            f=np.array([sum(params_int),(Etst+Etrn)*(1+self.penalty_coe[0]*Etst[Etst>0.15 and Etst<0.25].size+self.penalty_coe[1]*Etst[Etst>0.25].size)])
+            Etst=np.abs((y_valid_pred-self.y_valid)/(self.y_valid+bias))
+            Etrn=np.abs((y_train_pred-self.y_train)/(self.y_train+bias))
+            Ntstavg=np.sum((Etst>0.15)&(Etst<0.25))
+            Ntstbad=np.sum(Etst>0.25)
+            f=np.array([sum(params_int),(np.mean(Etst)+np.mean(Etrn))*(1+self.penalty_coe[0]*Ntstavg+self.penalty_coe[1]*Ntstbad)])
 
             y_pred_total=np.vstack((y_train_pred,y_valid_pred))
             y_train_total=np.vstack((self.y_train,self.y_valid))
