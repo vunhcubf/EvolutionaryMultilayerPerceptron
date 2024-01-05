@@ -21,6 +21,24 @@ class Utils:
         return x
 # 用于处理结果的部分
 class EmlpResultHandler:
+    def DrawPercentageErrorHistogram(self,XTrain,YTrain,key_of_model):
+        YPred=self.PredictModel(key_of_model,XTrain)
+        RmsePercentage=100*np.abs((YPred-YTrain)/(YTrain+1e-3))
+        plt.hist(RmsePercentage, bins=100)  # 使用30个柱子
+        plt.xlabel('Percentage Error(%)')
+        plt.ylabel('Frequency')
+        plt.title('Error Distribution Histogram')
+        plt.xlim(0,max(100,np.max(RmsePercentage)))
+        plt.show()
+    def DrawErrorHistogram(self,XTrain,YTrain,key_of_model):
+        YPred=self.PredictModel(key_of_model,XTrain)
+        RmsePercentage=np.abs(YPred-YTrain)
+        plt.hist(RmsePercentage, bins=100)  # 使用30个柱子
+        plt.xlabel('Absolute Error')
+        plt.ylabel('Frequency')
+        plt.title('Error Distribution Histogram')
+        plt.xlim(np.min(RmsePercentage),np.max(RmsePercentage))
+        plt.show()
     def __init__(self,ResultDictionary) -> None:
         self.ResultDictionary=ResultDictionary
     def PrintModel(self):
@@ -43,7 +61,7 @@ class EmlpResultHandler:
         if 'ActivateFunction' in ModelData:
             activate_function=ModelData['ActivateFunction']
         else:
-            [torch.sigmoid for _ in range(key_of_model.size)]
+            activate_function=[torch.sigmoid for _ in range(key_of_model.size)]
         x=(x-ModelData['XMin'])/(ModelData['XMax']-ModelData['XMin'])
         x=x.astype(np.float32)
         x=torch.from_numpy(x)
@@ -195,7 +213,7 @@ class EmlpProblem(Problem):
         # 创建评价标准
         Criterion=nn.MSELoss()
         # 创建Adam优化器
-        Optimizer=torch.optim.Adam(Model.parameters(),lr=self.ConfigDict['MaxLearningRate'])
+        Optimizer=torch.optim.RAdam(Model.parameters(),lr=self.ConfigDict['MaxLearningRate'])
         # 创建可变学习率的Scheduler
         LearningRateSchedulerStepSize=round(self.ConfigDict['Epochs']*0.01)
         Gamma=(self.ConfigDict['MinLearningRate']/self.ConfigDict['MaxLearningRate'])**(1/100)
@@ -221,8 +239,7 @@ class EmlpProblem(Problem):
             Optimizer.step()
             Optimizer.zero_grad()
             # 可变学习率规划器迭代
-            if LearningRateSchedulerStepSize != 0:
-                Scheduler.step()
+            Scheduler.step()
             # 设置判断是否结束训练的标志
             QuitFlag=False
             # 进行验证检查
@@ -233,6 +250,7 @@ class EmlpProblem(Problem):
                 QuitFlag=True
             if QuitFlag:
                 break
+        YValidPred=Model(XValidGpu)
         return Model.cpu(),YTrainPred.cpu().data.numpy(),YValidPred.cpu().data.numpy()
     def _evaluate(self, x, out, *args, **kwargs):
         # 使用一个字典来保存这个网络的数据
