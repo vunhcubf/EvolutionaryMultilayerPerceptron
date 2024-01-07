@@ -21,22 +21,22 @@ class Utils:
         return x
 # 用于处理结果的部分
 class EmlpResultHandler:
-    def DrawPercentageErrorHistogram(self,XTrain,YTrain,key_of_model):
+    def DrawPercentageErrorHistogram(self,XTrain,YTrain,key_of_model,Name=''):
         YPred=self.PredictModel(key_of_model,XTrain)
         RmsePercentage=100*np.abs((YPred-YTrain)/(YTrain+1e-3))
-        plt.hist(RmsePercentage, bins=100)  # 使用30个柱子
-        plt.xlabel('Percentage Error(%)')
+        plt.hist(RmsePercentage, bins=100,color='red')
+        plt.xlabel('Percentage Absolute Error(%)')
         plt.ylabel('Frequency')
-        plt.title('Error Distribution Histogram')
+        plt.title('Error Distribution Histogram'+Name)
         plt.xlim(0,max(100,np.max(RmsePercentage)))
         plt.show()
-    def DrawErrorHistogram(self,XTrain,YTrain,key_of_model):
+    def DrawErrorHistogram(self,XTrain,YTrain,key_of_model,Name=''):
         YPred=self.PredictModel(key_of_model,XTrain)
         RmsePercentage=np.abs(YPred-YTrain)
-        plt.hist(RmsePercentage, bins=100)  # 使用30个柱子
+        plt.hist(RmsePercentage, bins=100,color='red')
         plt.xlabel('Absolute Error')
         plt.ylabel('Frequency')
-        plt.title('Error Distribution Histogram')
+        plt.title('Error Distribution Histogram'+Name)
         plt.xlim(np.min(RmsePercentage),np.max(RmsePercentage))
         plt.show()
     def __init__(self,ResultDictionary) -> None:
@@ -70,7 +70,7 @@ class EmlpResultHandler:
         y=model(x).data.numpy()
         y=ModelData['YMin']+y*(ModelData['YMax']-ModelData['YMin'])
         return y
-    def DrawParetoSet(self):
+    def DrawParetoSet(self,Name=''):
         complexity=[]
         accuracy=[]
         for key,value in self.ResultDictionary.items():
@@ -79,7 +79,7 @@ class EmlpResultHandler:
         plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
         plt.xlabel('Complexity')
         plt.ylabel('EmlpError')
-        plt.title('Pareto Set')
+        plt.title('Pareto Set'+Name)
         plt.show()
 ##################################################################
 ##################################################################
