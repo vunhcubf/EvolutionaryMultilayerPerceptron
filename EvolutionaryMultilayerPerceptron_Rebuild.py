@@ -11,6 +11,8 @@ from matplotlib import pyplot as plt
 import math
 import sys
 import copy
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 class Utils:
     @staticmethod
@@ -20,6 +22,8 @@ class Utils:
         x=x[x!=0]
         return x
 # 用于处理结果的部分
+def lerp(x1,x2,t):
+    return x1*(1-t)+x2*t
 class EmlpResultHandler:
     def DrawPercentageErrorHistogram(self,XTrain,YTrain,key_of_model,Name=''):
         YPred=self.PredictModel(key_of_model,XTrain)
@@ -28,7 +32,7 @@ class EmlpResultHandler:
         plt.xlabel('Percentage Absolute Error(%)')
         plt.ylabel('Frequency')
         plt.title('Error Distribution Histogram'+Name)
-        plt.xlim(0,max(100,np.max(RmsePercentage)))
+        plt.xlim(0,max(40,np.max(RmsePercentage)))
         plt.show()
     def DrawErrorHistogram(self,XTrain,YTrain,key_of_model,Name=''):
         YPred=self.PredictModel(key_of_model,XTrain)
@@ -57,6 +61,11 @@ class EmlpResultHandler:
             print(info[index])
     def PredictModel(self,key_of_model,x):
         ModelData=self.ResultDictionary[tuple(key_of_model)]
+        # 检查是否应用了PCA
+        if ('ComponentMatrix' in ModelData) and ('StandardScaler' in ModelData):
+            # 应用变换
+            x=ModelData['StandardScaler'].transform(x)
+            x=np.dot(x,ModelData['ComponentMatrix'])
         key_of_model=Utils.RemoveZeros(key_of_model)
         if 'ActivateFunction' in ModelData:
             activate_function=ModelData['ActivateFunction']
@@ -132,6 +141,35 @@ class EmlpTrainer:
         # 保存训练的网络
         self.ParetoSetNeuralNetwork={}
         self.ConfigDict=copy.deepcopy(ConfigDict)
+        # 新增PCA相关内容
+        if 'UsePCA' in self.ConfigDict:
+            if self.ConfigDict['UsePCA']:
+                Scaler=StandardScaler()
+                Scaler.fit(self.ConfigDict['X'])
+                X_Std=Scaler.transform(self.ConfigDict['X'])
+
+                model0=PCA()
+                model0.fit(X_Std)
+                if not('ExplainedVarianceRatio' in self.ConfigDict):
+                    ExplainedVarianceRatio=0.95
+                else:
+                    ExplainedVarianceRatio=self.ConfigDict['ExplainedVarianceRatio']
+                Dim=np.argmax(np.cumsum(model0.explained_variance_ratio_)>ExplainedVarianceRatio)
+
+                plt.figure()
+                plt.plot(np.arange(model0.explained_variance_ratio_.size),model0.explained_variance_ratio_)
+                plt.title('Variance Contribution')
+                plt.show()
+                print(f'保留维度:{Dim+1}')
+
+                Model=PCA(n_components=Dim+1,whiten=False)
+                Model.fit(X_Std)
+                # 保存相关数据
+                self.ConfigDict['ComponentMatrix']=Model.components_.T
+                self.ConfigDict['StandardScaler']=Scaler
+                # 应用变换
+                self.ConfigDict['X']=self.ConfigDict['StandardScaler'].transform(self.ConfigDict['X'])
+                self.ConfigDict['X']=np.dot(self.ConfigDict['X'],self.ConfigDict['ComponentMatrix'])
         # 配置求解器相关的参数
         self.ConfigDict['NumberOfVars']=len(self.ConfigDict["LowerBound"])
         self.ConfigDict['LowerBound']=np.array(self.ConfigDict['LowerBound'],dtype=np.int32)
@@ -181,6 +219,7 @@ class EmlpTrainer:
         for key,value in self.ParetoSetNeuralNetwork.items():
             complexity.append(sum(value['TopologyInInt']))
             accuracy.append(value['EmlpError'])
+        plt.figure()
         plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
         plt.xlabel('Complexity')
         plt.ylabel('EmlpError')
@@ -206,7 +245,7 @@ class EmlpProblem(Problem):
         super().__init__(n_var=ConfigDict['NumberOfVars'], n_obj=2, xl=ConfigDict['LowerBound'], xu=ConfigDict['UpperBound'], vtype=int,elementwise=True, **kwargs)
         # 当前的评估次数，用于显示进度
         self.CurrentEvaluateTimes=0
-    def TrainNeuralNetwork(self,ModelData,XTrainGpu,XValidGpu,YTrainGpu,YValidGpu):
+    def TrainNeuralNetwork(self,ModelData,XTrainGpu,XValidGpu,YTrainGpu,YValidGpu,UseValidationCheck):
         ModelTopology=Utils.RemoveZeros(ModelData['TopologyInInt'])
         # 创建需要训练的模型
         Model=EmlpNet(self.ConfigDict['Dimension'],ModelTopology,1,self.ConfigDict['ActivateFunction']).to('cuda')
@@ -215,11 +254,12 @@ class EmlpProblem(Problem):
         # 创建Adam优化器
         Optimizer=torch.optim.RAdam(Model.parameters(),lr=self.ConfigDict['MaxLearningRate'])
         # 创建可变学习率的Scheduler
-        LearningRateSchedulerStepSize=round(self.ConfigDict['Epochs']*0.01)
-        Gamma=(self.ConfigDict['MinLearningRate']/self.ConfigDict['MaxLearningRate'])**(1/100)
-        Scheduler=torch.optim.lr_scheduler.StepLR(Optimizer,step_size=LearningRateSchedulerStepSize,gamma=Gamma)
+        # LearningRateSchedulerStepSize=round(self.ConfigDict['Epochs']*0.01)
+        # Gamma=(self.ConfigDict['MinLearningRate']/self.ConfigDict['MaxLearningRate'])**(1/100)
+        # Scheduler=torch.optim.lr_scheduler.StepLR(Optimizer,step_size=LearningRateSchedulerStepSize,gamma=Gamma)
         # 创建验证检查器
-        ValidationChecker=ValidationCheck(self.ConfigDict['MaxValidationCheck'])
+        if UseValidationCheck:
+            ValidationChecker=ValidationCheck(self.ConfigDict['MaxValidationCheck'])
         # 控制台输出的变量
         LastMessage=''
         CurrentMessage=''
@@ -231,7 +271,7 @@ class EmlpProblem(Problem):
             # 打印当前轮次的信息
             if (epochs+1)%100==0:
                 sys.stdout.write('\r')
-                CurrentMessage=f"训练轮次:{epochs+1}     训练误差:{Loss.item():.7e}     验证检查失败次数:{ValidationChecker.counter}     神经网络结构:{ModelTopology}     学习率:{Optimizer.param_groups[0]['lr']:.5e}"
+                CurrentMessage=f"训练轮次:{epochs+1}     训练误差:{Loss.item():.7e}     验证检查失败次数:{ValidationChecker.counter if UseValidationCheck else -1}     神经网络结构:{ModelTopology}     学习率:{Optimizer.param_groups[0]['lr']:.5e}"
                 sys.stdout.write(CurrentMessage.ljust(max(len(LastMessage),1)))
                 sys.stdout.flush()
                 LastMessage=CurrentMessage
@@ -239,19 +279,23 @@ class EmlpProblem(Problem):
             Optimizer.step()
             Optimizer.zero_grad()
             # 可变学习率规划器迭代
-            Scheduler.step()
+            for ParamGroup in Optimizer.param_groups:
+                ParamGroup['lr']=lerp(self.ConfigDict['MaxLearningRate'],self.ConfigDict['MinLearningRate'],epochs/self.ConfigDict['Epochs'])
             # 设置判断是否结束训练的标志
             QuitFlag=False
             # 进行验证检查
-            YValidPred=Model(XValidGpu)
-            if (epochs+1) % 100==0:
+            if (UseValidationCheck) and ((epochs+1) % self.ConfigDict['ValidationCheckInterval']==0):
+                YValidPred=Model(XValidGpu)
                 QuitFlag=ValidationChecker.update(YValidGpu,YValidPred)
             if Loss.item()<=self.ConfigDict['Precision']:
                 QuitFlag=True
             if QuitFlag:
                 break
-        YValidPred=Model(XValidGpu)
-        return Model.cpu(),YTrainPred.cpu().data.numpy(),YValidPred.cpu().data.numpy()
+        if UseValidationCheck:
+            YValidPred=Model(XValidGpu)
+            return Model.cpu(),YTrainPred.cpu().data.numpy(),YValidPred.cpu().data.numpy()
+        else:
+            return Model.cpu(),YTrainPred.cpu().data.numpy(),None
     def _evaluate(self, x, out, *args, **kwargs):
         # 使用一个字典来保存这个网络的数据
         ModelData={}
@@ -261,30 +305,42 @@ class EmlpProblem(Problem):
         ModelData['TopologyInFloat']=ModelTopology_Float
         ModelData['TopologyInInt']=ModelTopology_Int
         ModelData['ActivateFunction']=self.ConfigDict['ActivateFunction']
-        # 划分这次训练的验证集和训练集
-        RandomIndex=np.arange(0,self.ConfigDict['NumberOfSamples'])
-        np.random.shuffle(RandomIndex)
-        TrainDataIndex=RandomIndex[0 : round(self.ConfigDict['TrainDataPercentage']*self.ConfigDict['NumberOfSamples'])]
-        ValidDataIndex=RandomIndex[round(self.ConfigDict['TrainDataPercentage']*self.ConfigDict['NumberOfSamples']) :]
-        XTrainGpu=self.ConfigDict['XGpu'][TrainDataIndex]
-        YTrainGpu=self.ConfigDict['YGpu'][TrainDataIndex]
-        XValidGpu=self.ConfigDict['XGpu'][ValidDataIndex]
-        YValidGpu=self.ConfigDict['YGpu'][ValidDataIndex]
+        UseValidationCheck=self.ConfigDict['TrainDataPercentage'] < 1
+        if UseValidationCheck:
+            # 划分这次训练的验证集和训练集
+            RandomIndex=np.arange(0,self.ConfigDict['NumberOfSamples'])
+            np.random.shuffle(RandomIndex)
+            TrainDataIndex=RandomIndex[0 : round(self.ConfigDict['TrainDataPercentage']*self.ConfigDict['NumberOfSamples'])]
+            ValidDataIndex=RandomIndex[round(self.ConfigDict['TrainDataPercentage']*self.ConfigDict['NumberOfSamples']) :]
+            XTrainGpu=self.ConfigDict['XGpu'][TrainDataIndex]
+            YTrainGpu=self.ConfigDict['YGpu'][TrainDataIndex]
+            XValidGpu=self.ConfigDict['XGpu'][ValidDataIndex]
+            YValidGpu=self.ConfigDict['YGpu'][ValidDataIndex]
+        else:
+            XTrainGpu=self.ConfigDict['XGpu']
+            YTrainGpu=self.ConfigDict['YGpu']
+            XValidGpu=None
+            YValidGpu=None
         # 开始训练
-        Model,YTrainPred,YValidPred=self.TrainNeuralNetwork(ModelData,XTrainGpu,XValidGpu,YTrainGpu,YValidGpu)
+        Model,YTrainPred,YValidPred=self.TrainNeuralNetwork(ModelData,XTrainGpu,XValidGpu,YTrainGpu,YValidGpu,UseValidationCheck)
         # 根据论文计算Emlp误差
-        YValid=self.ConfigDict['Y'][ValidDataIndex]
-        YTrain=self.ConfigDict['Y'][TrainDataIndex]
-        ErrorValid=np.abs((YValidPred-YValid)/(YValid+self.ConfigDict['PercentageErrorBias']))
-        ErrorTrain=np.abs((YTrainPred-YTrain)/(YTrain+self.ConfigDict['PercentageErrorBias']))
-        NValidAvg=np.sum((ErrorValid>0.15)&(ErrorValid<0.25))
-        NValidBad=np.sum(ErrorValid>0.25)
-        EmlpError=(np.mean(ErrorTrain)+np.mean(ErrorValid))*(1+ self.ConfigDict['PenaltyCoefficient'][0]*NValidAvg + self.ConfigDict['PenaltyCoefficient'][1]*NValidBad)
+        if not UseValidationCheck:
+            YTrain=self.ConfigDict['Y']
+            ErrorTrain=np.abs((YTrainPred-YTrain)/(YTrain+self.ConfigDict['PercentageErrorBias']))
+            NValidAvg=np.sum((ErrorTrain>0.15)&(ErrorTrain<0.25))
+            NValidBad=np.sum(ErrorTrain>0.25)
+            EmlpError=np.mean(ErrorTrain)*(1+ self.ConfigDict['PenaltyCoefficient'][0]*NValidAvg + self.ConfigDict['PenaltyCoefficient'][1]*NValidBad)
+        else:
+            YValid=self.ConfigDict['Y'][ValidDataIndex]
+            ErrorValid=np.abs((YValidPred-YValid)/(YValid+self.ConfigDict['PercentageErrorBias']))
+            NValidAvg=np.sum((ErrorValid>0.15)&(ErrorValid<0.25))
+            NValidBad=np.sum(ErrorValid>0.25)
+            EmlpError=(np.mean(ErrorTrain)+np.mean(ErrorValid))*(1+ self.ConfigDict['PenaltyCoefficient'][0]*NValidAvg + self.ConfigDict['PenaltyCoefficient'][1]*NValidBad)
         # 返回两个目标的适应度值
         out['F']=np.array([sum(ModelTopology_Int),EmlpError])
         # 记录各种误差
         ModelData['EmlpError']=EmlpError
-        YPred=np.vstack((YTrain,YValid))
+        YPred=np.vstack((YTrainPred,YValidPred)) if UseValidationCheck else YTrainPred
         # 映射回原来的大小
         YPred=self.ConfigDict['YMin']+(self.ConfigDict['YMax']-self.ConfigDict['YMin'])*YPred
         Y=self.ConfigDict['YMin']+(self.ConfigDict['YMax']-self.ConfigDict['YMin'])*self.ConfigDict['Y']
@@ -296,6 +352,8 @@ class EmlpProblem(Problem):
         ModelData['YMax']=self.ConfigDict['YMax']
         ModelData['XMin']=self.ConfigDict['XMin']
         ModelData['XMax']=self.ConfigDict['XMax']
+        ModelData['ComponentMatrix']=self.ConfigDict['ComponentMatrix']
+        ModelData['StandardScaler']=self.ConfigDict['StandardScaler']
         # 评估帕累托解集
         self.ParetoSetNeuralNetwork[tuple(ModelTopology_Int)]=ModelData
         if len(self.ParetoSetNeuralNetwork)>1:
