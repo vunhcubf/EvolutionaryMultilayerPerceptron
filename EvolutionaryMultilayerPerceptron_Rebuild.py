@@ -32,7 +32,7 @@ class EmlpResultHandler:
         plt.xlabel('Percentage Absolute Error(%)')
         plt.ylabel('Frequency')
         plt.title('Error Distribution Histogram'+Name)
-        plt.xlim(0,max(40,np.max(RmsePercentage)))
+        plt.xlim(0,max(100,np.max(RmsePercentage)))
         plt.show()
     def DrawErrorHistogram(self,XTrain,YTrain,key_of_model,Name=''):
         YPred=self.PredictModel(key_of_model,XTrain)
@@ -71,13 +71,13 @@ class EmlpResultHandler:
             activate_function=ModelData['ActivateFunction']
         else:
             activate_function=[torch.sigmoid for _ in range(key_of_model.size)]
-        x=(x-ModelData['XMin'])/(ModelData['XMax']-ModelData['XMin'])
+        x=1e-2+(x-ModelData['XMin'])/(ModelData['XMax']-ModelData['XMin'])
         x=x.astype(np.float32)
         x=torch.from_numpy(x)
         model=EmlpNet(ModelData['Dimension'],key_of_model,1,activate_function)
         model.load_state_dict(ModelData['ModelDictionary'])
         y=model(x).data.numpy()
-        y=ModelData['YMin']+y*(ModelData['YMax']-ModelData['YMin'])
+        y=ModelData['YMin']+(y-1e-2)*(ModelData['YMax']-ModelData['YMin'])
         return y
     def DrawParetoSet(self,Name=''):
         complexity=[]
@@ -160,6 +160,7 @@ class EmlpTrainer:
                 plt.plot(np.arange(model0.explained_variance_ratio_.size),model0.explained_variance_ratio_)
                 plt.title('Variance Contribution')
                 plt.show()
+                print(f'累计方差占比：{np.cumsum(model0.explained_variance_ratio_)}')
                 print(f'保留维度:{Dim+1}')
 
                 Model=PCA(n_components=Dim+1,whiten=False)
@@ -187,8 +188,8 @@ class EmlpTrainer:
         self.ConfigDict['YMin']=np.min(self.ConfigDict['Y'])
         self.ConfigDict['YMax']=np.max(self.ConfigDict['Y'])
         # 对数据使用0-1归一化
-        self.ConfigDict['X']=(self.ConfigDict['X']-self.ConfigDict['XMin'])/(self.ConfigDict['XMax']-self.ConfigDict['XMin'])
-        self.ConfigDict['Y']=(self.ConfigDict['Y']-self.ConfigDict['YMin'])/(self.ConfigDict['YMax']-self.ConfigDict['YMin'])
+        self.ConfigDict['X']=1e-2+(self.ConfigDict['X']-self.ConfigDict['XMin'])/(self.ConfigDict['XMax']-self.ConfigDict['XMin'])
+        self.ConfigDict['Y']=1e-2+(self.ConfigDict['Y']-self.ConfigDict['YMin'])/(self.ConfigDict['YMax']-self.ConfigDict['YMin'])
         # 处理一下输入的激活函数，扩展成函数指针的列表
         ActivateFunctionListTemporary=[]
         if len(self.ConfigDict['ActivateFunction'])==1 or not isinstance(self.ConfigDict['ActivateFunction'],list):
@@ -324,15 +325,15 @@ class EmlpProblem(Problem):
         # 开始训练
         Model,YTrainPred,YValidPred=self.TrainNeuralNetwork(ModelData,XTrainGpu,XValidGpu,YTrainGpu,YValidGpu,UseValidationCheck)
         # 根据论文计算Emlp误差
+        YTrain=self.ConfigDict['Y']
+        ErrorTrain=np.abs((YTrainPred-YTrain)/(YTrain-1e-2+max(1e-2,self.ConfigDict['PercentageErrorBias'])))
         if not UseValidationCheck:
-            YTrain=self.ConfigDict['Y']
-            ErrorTrain=np.abs((YTrainPred-YTrain)/(YTrain+self.ConfigDict['PercentageErrorBias']))
             NValidAvg=np.sum((ErrorTrain>0.15)&(ErrorTrain<0.25))
             NValidBad=np.sum(ErrorTrain>0.25)
             EmlpError=np.mean(ErrorTrain)*(1+ self.ConfigDict['PenaltyCoefficient'][0]*NValidAvg + self.ConfigDict['PenaltyCoefficient'][1]*NValidBad)
         else:
             YValid=self.ConfigDict['Y'][ValidDataIndex]
-            ErrorValid=np.abs((YValidPred-YValid)/(YValid+self.ConfigDict['PercentageErrorBias']))
+            ErrorValid=np.abs((YValidPred-YValid)/(YValid-1e-2+max(1e-2,self.ConfigDict['PercentageErrorBias'])))
             NValidAvg=np.sum((ErrorValid>0.15)&(ErrorValid<0.25))
             NValidBad=np.sum(ErrorValid>0.25)
             EmlpError=(np.mean(ErrorTrain)+np.mean(ErrorValid))*(1+ self.ConfigDict['PenaltyCoefficient'][0]*NValidAvg + self.ConfigDict['PenaltyCoefficient'][1]*NValidBad)
@@ -342,9 +343,9 @@ class EmlpProblem(Problem):
         ModelData['EmlpError']=EmlpError
         YPred=np.vstack((YTrainPred,YValidPred)) if UseValidationCheck else YTrainPred
         # 映射回原来的大小
-        YPred=self.ConfigDict['YMin']+(self.ConfigDict['YMax']-self.ConfigDict['YMin'])*YPred
-        Y=self.ConfigDict['YMin']+(self.ConfigDict['YMax']-self.ConfigDict['YMin'])*self.ConfigDict['Y']
-        ModelData['TotalPercentageRmseError']=math.sqrt( np.mean( ((Y-YPred)/(Y+1e-7))**2 ) )
+        YPred=self.ConfigDict['YMin']+(self.ConfigDict['YMax']-self.ConfigDict['YMin'])*(YPred-1e-2)
+        Y=self.ConfigDict['YMin']+(self.ConfigDict['YMax']-self.ConfigDict['YMin'])*(self.ConfigDict['Y']-1e-2)
+        ModelData['TotalPercentageRmseError']=math.sqrt( np.mean( ((Y-YPred)/(Y+1e-3))**2 ) )
         ModelData['TotalRmseError']=math.sqrt( np.mean( (Y-YPred)**2 ) )
         ModelData['ModelDictionary']=Model.state_dict()
         ModelData['Dimension']=self.ConfigDict['Dimension']
@@ -352,8 +353,9 @@ class EmlpProblem(Problem):
         ModelData['YMax']=self.ConfigDict['YMax']
         ModelData['XMin']=self.ConfigDict['XMin']
         ModelData['XMax']=self.ConfigDict['XMax']
-        ModelData['ComponentMatrix']=self.ConfigDict['ComponentMatrix']
-        ModelData['StandardScaler']=self.ConfigDict['StandardScaler']
+        if self.ConfigDict['UsePCA']:
+            ModelData['ComponentMatrix']=self.ConfigDict['ComponentMatrix']
+            ModelData['StandardScaler']=self.ConfigDict['StandardScaler']
         # 评估帕累托解集
         self.ParetoSetNeuralNetwork[tuple(ModelTopology_Int)]=ModelData
         if len(self.ParetoSetNeuralNetwork)>1:
