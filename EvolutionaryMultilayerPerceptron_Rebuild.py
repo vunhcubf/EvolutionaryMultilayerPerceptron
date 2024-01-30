@@ -24,6 +24,64 @@ class Utils:
 # 用于处理结果的部分
 def lerp(x1,x2,t):
     return x1*(1-t)+x2*t
+def CombineResults(ResultDictionarys,LogScale=False):
+    ResultDictionarys=copy.deepcopy(ResultDictionarys)
+    Result={}
+    for instance in ResultDictionarys:
+        Result=Result | instance
+    KeyList=list(Result.keys())
+    NumItems=len(Result)
+    IsADominateB=np.zeros((NumItems,NumItems))
+    for i in range(NumItems-1):
+        for j in range(i+1,NumItems):
+            a=np.array([Result[KeyList[i]]['EmlpError'],sum(Result[KeyList[i]]['TopologyInInt'])],dtype=np.float32)
+            b=np.array([Result[KeyList[j]]['EmlpError'],sum(Result[KeyList[j]]['TopologyInInt'])],dtype=np.float32)
+            A_Dominate_B=EmlpProblem.is_a_dominate_b(a,b)
+            if A_Dominate_B==1:
+                IsADominateB[i,j]=1
+                IsADominateB[j,i]=0
+            elif A_Dominate_B==0:
+                IsADominateB[i,j]=0
+                IsADominateB[j,i]=0
+            if A_Dominate_B==-1:
+                IsADominateB[i,j]=0
+                IsADominateB[j,i]=1
+    BeDominated=np.sum(IsADominateB,axis=0)
+    DeprecatedSet={}
+    for i in range(NumItems):
+        if not BeDominated[i]==0:
+            DeprecatedSet[KeyList[i]]=Result[KeyList[i]]
+            del Result[KeyList[i]]
+    complexity=[]
+    accuracy=[]
+    for key,value in DeprecatedSet.items():
+        complexity.append(sum(value['TopologyInInt']))
+        accuracy.append(value['EmlpError'])
+    plt.scatter(complexity,accuracy,s=20,edgecolors='blue',facecolor='none')
+    complexity.clear()
+    accuracy.clear()
+    for key,value in Result.items():
+        complexity.append(sum(value['TopologyInInt']))
+        accuracy.append(value['EmlpError'])
+    plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
+    plt.xlabel('Complexity')
+    plt.ylabel('EmlpError')
+    if LogScale:
+        plt.yscale('log')
+    plt.show()
+    return Result
+def CombineResultsWithRecalculateEmlpError(ResultDictionarys,XTrain,YTrain,EmlpPenaltyTrem,EmlpPenaltyThreshold,LogScale=False):
+    ResultDictionarys=copy.deepcopy(ResultDictionarys)
+    for instance in ResultDictionarys:
+        ResultHandler=EmlpResultHandler(instance)
+        for key,value in instance.items():
+            YTrainPred=ResultHandler.PredictModel(list(key),XTrain)
+            ErrorTrain=np.abs((YTrain-YTrainPred)/(1e-4+YTrain))
+            NValidAvg=np.sum((ErrorTrain>EmlpPenaltyThreshold[0])&(ErrorTrain<EmlpPenaltyThreshold[1]))
+            NValidBad=np.sum(ErrorTrain>EmlpPenaltyThreshold[1])
+            EmlpError=np.mean(ErrorTrain)*(1+NValidAvg*EmlpPenaltyTrem[0]+NValidBad*EmlpPenaltyTrem[1])
+            value['EmlpError']=EmlpError
+    return CombineResults(ResultDictionarys,LogScale=LogScale)
 class EmlpResultHandler:
     def DrawPercentageErrorHistogram(self,XTrain,YTrain,key_of_model,Name=''):
         YPred=self.PredictModel(key_of_model,XTrain)
@@ -32,7 +90,7 @@ class EmlpResultHandler:
         plt.xlabel('Percentage Absolute Error(%)')
         plt.ylabel('Frequency')
         plt.title('Error Distribution Histogram'+Name)
-        plt.xlim(0,max(100,np.max(RmsePercentage)))
+        plt.xlim(0,np.max(RmsePercentage))
         plt.show()
     def DrawErrorHistogram(self,XTrain,YTrain,key_of_model,Name=''):
         YPred=self.PredictModel(key_of_model,XTrain)
@@ -45,6 +103,11 @@ class EmlpResultHandler:
         plt.show()
     def __init__(self,ResultDictionary) -> None:
         self.ResultDictionary=ResultDictionary
+    def PrintKeys(self):
+        for key,value in self.ResultDictionary.items():
+            for key_sub in value:
+                print(key_sub)
+            break
     def PrintModel(self):
         info=[]
         index=[]
@@ -79,7 +142,7 @@ class EmlpResultHandler:
         y=model(x).data.numpy()
         y=ModelData['YMin']+(y-1e-2)*(ModelData['YMax']-ModelData['YMin'])
         return y
-    def DrawParetoSet(self,Name=''):
+    def DrawParetoSet(self,Name='',LogScale=False):
         complexity=[]
         accuracy=[]
         for key,value in self.ResultDictionary.items():
@@ -88,7 +151,25 @@ class EmlpResultHandler:
         plt.scatter(complexity,accuracy,s=20,edgecolors='red',facecolor='none')
         plt.xlabel('Complexity')
         plt.ylabel('EmlpError')
-        plt.title('Pareto Set'+Name)
+        plt.title('Pareto Set '+Name)
+        if LogScale:
+            plt.yscale('log')
+        plt.show()
+    def DrawParetoFrontier(self,Name='',LogScale=False):
+        complexity=[]
+        accuracy=[]
+        for key,value in self.ResultDictionary.items():
+            complexity.append(sum(value['TopologyInInt']))
+            accuracy.append(value['EmlpError'])
+        complexity=np.array(complexity)
+        accuracy=np.array(accuracy)
+        sorted_indices=np.argsort(complexity)
+        plt.plot(complexity[sorted_indices],accuracy[sorted_indices],color='r',linewidth=3)
+        plt.xlabel('Complexity')
+        plt.ylabel('EmlpError')
+        plt.title('Pareto Frontier '+Name)
+        if LogScale:
+            plt.yscale('log')
         plt.show()
 ##################################################################
 ##################################################################
